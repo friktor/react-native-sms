@@ -2,11 +2,11 @@
 ![logo](logo.png)
 
 Native module for work with sms on android. Created for working with Telephony sms api as default sms manager.
-*_AHTUNG_*: Current native module currently is stagging, because not written tests and not implemented all todo features. Use with caution.
+*_AHTUNG_*: native module is currently unstable, because tests are not written and not all todo features are implemented. Use with caution.
 
 # Features
 * Get current status - "is default app"
-* Recieve permission for set current app as default sms app
+* Recieve permission for setting current app as default sms app
 * Get filtered sms list
 * Send sms
 
@@ -19,7 +19,7 @@ npm install git+https://github.com/friktor/react-native-sms --save
 
 ## Linking Module
 Surely you would like to just write a command react-native link, and live happily, but ...
-Need edit your build configs and sources on your awesome editor or IDE.
+You need to edit your build configs and sources on your awesome editor or IDE.
 
 _android/settings.gradle_
 ``` groovy
@@ -90,14 +90,14 @@ console.log(isSended) // Boolean, or promise exception :D
 ```
 
 # TODO List
-- [x] Understand how write on kotlin for react-native
+- [x] Understand how to write on kotlin for react-native
 - [x] Send message
 - [x] Sms list
 - [x] Status app
 - [x] Set app as default app
 - [ ] Live Sms broadcast, with background workers
 - [ ] Work with big sms db on separate thread
-- [ ] Finish write autolinking native modules writted on Kotlin
+- [ ] Finish writing autolinking native modules written on Kotlin
 - [ ] Work with mms (...maybe)
 - [ ] UI and API sugar
 - [ ] Write tests (shit, but needed)
@@ -106,4 +106,4 @@ console.log(isSended) // Boolean, or promise exception :D
 - [ ] PROFIT!!!
 
 # Thanks
-Inspired by @rhaker [react-native-sms-android](https://github.com/rhaker/react-native-sms-android) and rewritted on Kotlin, with promises and sugar
+Inspired by @rhaker [react-native-sms-android](https://github.com/rhaker/react-native-sms-android) and rewritten on Kotlin, with promises and sugar
