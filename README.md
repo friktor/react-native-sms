@@ -1,6 +1,8 @@
 # React Native Sms
+![logo](logo.png)
+
 Native module for work with sms on android. Created for working with Telephony sms api as default sms manager.
-AHTUNG: Current native module currently is stagging, because not written tests and not implemented all todo features. Use with caution.
+*_AHTUNG_*: Current native module currently is stagging, because not written tests and not implemented all todo features. Use with caution.
 
 # Features
 * Get current status - "is default app"
@@ -9,7 +11,7 @@ AHTUNG: Current native module currently is stagging, because not written tests a
 * Send sms
 
 ## Installation
-```
+``` bash
 yarn add https://github.com/friktor/react-native-sms
 # or 
 npm install git+https://github.com/friktor/react-native-sms --save
@@ -88,20 +90,20 @@ console.log(isSended) // Boolean, or promise exception :D
 ```
 
 # TODO List
-[x] Understand how write on kotlin for react-native
-[x] Send message
-[x] Sms list
-[x] Status app
-[x] Set app as default app
-[ ] Live Sms broadcast, with background workers
-[ ] Work with big sms db on separate thread
-[ ] Finish write autolinking native modules writted on Kotlin
-[ ] Work with mms (...maybe)
-[ ] UI and API sugar
-[ ] Write tests (shit, but needed)
-[ ] Write short example guide
-[ ] Add example app
-[ ] PROFIT!!!
+- [x] Understand how write on kotlin for react-native
+- [x] Send message
+- [x] Sms list
+- [x] Status app
+- [x] Set app as default app
+- [ ] Live Sms broadcast, with background workers
+- [ ] Work with big sms db on separate thread
+- [ ] Finish write autolinking native modules writted on Kotlin
+- [ ] Work with mms (...maybe)
+- [ ] UI and API sugar
+- [ ] Write tests (shit, but needed)
+- [ ] Write short example guide
+- [ ] Add example app
+- [ ] PROFIT!!!
 
 # Thanks
 Inspired by @rhaker [react-native-sms-android](https://github.com/rhaker/react-native-sms-android) and rewritted on Kotlin, with promises and sugar
