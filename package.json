@@ -1,0 +1,23 @@
+{
+  "description": "React Native modules for usage sms methods in android",
+  "name": "react-native-sms",
+  "version": "0.4.1",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "react-component",
+    "react-native",
+    "android",
+    "contact",
+    "addressbook",
+    "sms"
+  ],
+  "author": "Anton Shramko <antonshramko@yandex.ru>",
+  "license": "MIT",
+  "peerDependencies": {
+    "react-native": ">=0.43.0"
+  },
+  "devDependencies": {}
+}
