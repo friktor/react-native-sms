@@ -2,7 +2,6 @@ package com.friktor.reactnativesms
 
 import android.app.Activity
 import android.view.View
-
 import java.util.*
 
 import com.facebook.react.ReactPackage

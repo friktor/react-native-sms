@@ -2,46 +2,86 @@ package com.friktor.reactnativesms
 
 // Exceptions kotlin
 import kotlin.sequences.generateSequence
+import kotlin.collections.MutableList
 import kotlin.RuntimeException
 
 // Android
-import android.app.Activity
-import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.pm.PackageManager
+import android.content.ContentResolver
+import android.provider.Telephony.Sms
+import android.content.IntentFilter
+import android.telephony.SmsManager
+import android.app.PendingIntent
+import android.database.Cursor
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.net.Uri
+import android.app.Activity
+import android.os.Bundle
 import android.os.Build
-import android.provider.Telephony.Sms
-import android.telephony.SmsManager
 import android.util.Log
-import android.database.Cursor
+import android.net.Uri
 
 // React Native need context binders
-import com.facebook.react.bridge.Promise
-import com.facebook.react.bridge.Callback
-import com.facebook.react.bridge.NativeModule
-import com.facebook.react.bridge.ReactApplicationContext
-import com.facebook.react.bridge.ReactContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
+import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.LifecycleEventListener
+import com.facebook.react.bridge.NativeModule
+import com.facebook.react.bridge.ReactContext
 import com.facebook.react.bridge.ReactMethod
+import com.facebook.react.bridge.Callback
+import com.facebook.react.bridge.Promise
 
 // React Native data transporter
-import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReadableArray
-import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableArray
+import com.facebook.react.bridge.ReadableType
+import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
+import com.facebook.react.bridge.Arguments
 
-// KOI Libs
-// import com.mcxiaoke.koi.ext.*
+// Libtary for other actions
+import kotlinx.coroutines.experimental.channels.*
+import kotlinx.coroutines.experimental.*
+import kotlinx.coroutines.experimental.android.*
+import org.jetbrains.anko.coroutines.experimental.bg
 
 class SmsModule
 (private val reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
+  
+  // Lifecycle handler for stop or start wathing get pending results
+  private val lifecycleHandlers = object: LifecycleEventListener {
+    public override fun onHostResume() {
+      val context = reactContext.getBaseContext()
+      context.registerReceiver(deliverReciever, IntentFilter(SMS_DELIVERED))
+      context.registerReceiver(sentReciever, IntentFilter(SMS_SENT))
+    }
+
+    public override fun onHostPause() {
+      val context = reactContext.getBaseContext()
+      context.unregisterReceiver(deliverReciever)
+      context.unregisterReceiver(sentReciever)
+    }
+
+    public override fun onHostDestroy() {
+      val context = reactContext.getBaseContext()
+      context.unregisterReceiver(deliverReciever)
+      context.unregisterReceiver(sentReciever)
+    }
+  }
+
+  // Initialize lifecycle watcher
+  init {
+    reactContext.addLifecycleEventListener(lifecycleHandlers)
+  }
+
+  // Recievers
+  private val deliverReciever = BroadcastDeliver(getReactApplicationContext())
+  private val sentReciever = BroadcastSent(getReactApplicationContext())
+
   override fun getName(): String = "SmsAndroid"
 
+  // private function for get status of current app
   private val appDefaultStatus: Boolean
     get() {
       val currentActivity = getCurrentActivity() ?: return false
@@ -56,6 +96,7 @@ class SmsModule
     promise.resolve(isDefault)
   }
 
+  // Method for set current app as default sms manager app
   @ReactMethod
   fun setAsDefaultApp(promise: Promise) {
     val currentActivity: Activity? = getCurrentActivity()
@@ -70,110 +111,143 @@ class SmsModule
         currentActivity.startActivity(intent)
         promise.resolve(true)
       } catch (error: Exception) {
-        promise.reject(SET_AS_DEFAULT_ERROR, error)
+        promise.reject(SMS_ERROR_SET_DEFAULT, error)
       }
     } else {
       val error = RuntimeException("activity is no allowed")
-      promise.reject(SET_AS_DEFAULT_ERROR, error)
+      promise.reject(SMS_ERROR_SET_DEFAULT, error)
     }
   }
 
   @ReactMethod
-  fun send(phoneNumberString: String, body: String?, sendType: String, promise: Promise) {
-    // send directly if user requests and android greater than 4.4
-    if (sendType.equals("sendDirect") && body != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-      try {
-        val smsManager = SmsManager.getDefault()
-        smsManager.sendTextMessage(phoneNumberString, null, body, null, null)
-        promise.resolve(true)
-      } catch (error: Exception) {
-        promise.reject(SMS_SEND_ERROR, error)
+  fun send(phone: String, text: String, uniqueId: String, promise: Promise) {
+    try {
+      val context = reactContext.getBaseContext()
+      val manager = SmsManager.getDefault()
+
+      // Slice message by parts by size
+      val multipartSmsText: ArrayList<String> = manager.divideMessage(text)
+      var smsChunksLength = multipartSmsText.size
+
+      // Handlers Intents & Resulted message chunks
+      val deliveredHandlers: ArrayList<PendingIntent?> = ArrayList(smsChunksLength)
+      val sentHandlers: ArrayList<PendingIntent?> = ArrayList(smsChunksLength)
+      val resultChunks = Arguments.createArray()
+
+      for ((index, chunk) in multipartSmsText.withIndex()) {
+        // Delivered intent with extra config
+        val deliveredIntent = Intent(SMS_DELIVERED)
+        deliveredIntent.putExtra("groupId", uniqueId)
+        deliveredIntent.putExtra("chunkIndex", index)
+        val deliveredWaiting = PendingIntent.getBroadcast(context, 0, deliveredIntent, 0)
+        deliveredHandlers.add(deliveredWaiting)
+        
+        // Sent intent with extra config
+        val sentIntent = Intent(SMS_SENT)
+        deliveredIntent.putExtra("groupId", uniqueId)
+        deliveredIntent.putExtra("chunkIndex", index)
+        val sentWaiting = PendingIntent.getBroadcast(context, 0, sentIntent, 0)
+        sentHandlers.add(sentWaiting)
+
+        // Push result chunk for sent
+        resultChunks.pushString(chunk)
       }
 
-    } else {
-      val sendIntent = Intent(Intent.ACTION_VIEW, Uri.parse("sms:" + phoneNumberString.trim()))
-      sendIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+      // Send sms message
+      manager.sendMultipartTextMessage(
+        phone, null, multipartSmsText,
+        // Recievers
+        sentHandlers,
+        deliveredHandlers
+      )
 
-      if (body != null) {
-        sendIntent.putExtra("sms_body", body)
-      }
+      // Make basic sent result
+      val result = Arguments.createMap()
+      result.putArray("messageGroup", resultChunks)
+      result.putString("groupId", uniqueId)
 
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-        val defaultSmsPackageName = Sms.getDefaultSmsPackage(getCurrentActivity())
-        if (defaultSmsPackageName != null) {
-          sendIntent.setPackage(defaultSmsPackageName)
-        }
-      }
-
-      try {
-        this.reactContext.startActivity(sendIntent)
-        promise.resolve(true)
-      } catch (error: Exception) {
-        promise.reject(SMS_SEND_ERROR, error)
-      }
-
+      promise.resolve(result)
+    } catch (error: Exception) {
+      promise.reject(SMS_ERROR_SEND, error)
     }
   }
 
   @ReactMethod
-  fun list(filter: ReadableMap, promise: Promise) {
+  fun list(box: String, paginate: ReadableMap, filter: ReadableMap, promise: Promise) {
+    // Schemas
+    val allowedTypes = arrayOf(
+      ReadableType.String,
+      ReadableType.Number
+    )
+
+    val fieldsSchema = mapOf(
+      "address" to "string",
+      "read" to "integer",
+      "body" to "string",
+      "_id" to "integer"
+    )
+    
     val currentActivity: Activity? = getCurrentActivity()
 
-    // @FILTERS
-    val uri_filter: String = if (filter.hasKey("box")) filter.getString("box") else "inbox"
-    val fread: Int = if (filter.hasKey("read")) filter.getInt("read") else -1
-    val fid: Int = if (filter.hasKey("_id")) filter.getInt("_id") else -1
+    // Paginate
+    val enablePaginate: Boolean = if (paginate.hasKey("enable")) paginate.getBoolean("enable") else true
+    val limit: Int = if (paginate.hasKey("limit")) paginate.getInt("limit") else 50
+    val skip: Int = if (paginate.hasKey("skip")) paginate.getInt("skip") else 0
 
-    val faddress: String = if (filter.hasKey("address")) filter.getString("address") else ""
-    val fcontent: String = if (filter.hasKey("body")) filter.getString("body") else ""
+    // Initial query data
+    var querySelection: MutableList<String> = mutableListOf()
+    var argsSelection: MutableList<String> = mutableListOf()
 
-    val indexFrom: Int = if (filter.hasKey("indexFrom")) filter.getInt("indexFrom") else 0
-    val maxCount: Int = if (filter.hasKey("maxCount")) filter.getInt("maxCount") else -1
+    // Build final query string by allowed filter keys
+    for ((key, schemaType) in fieldsSchema) {
+      if (filter.hasKey(key)) {
+        val elementType = filter.getType(key)
 
-    val cursor: Cursor? = currentActivity?.getContentResolver()?.query(Uri.parse("content://sms/" + uri_filter), null, "", null, null)
-    val smsList = Arguments.createArray()
-    var counter: Int = 0
-
-    fun _iteratorSafe_ (): Boolean {
-      val isAllowNext = cursor?.moveToNext()
-      return (isAllowNext != null && isAllowNext)
+        if (allowedTypes.contains(elementType)) {
+          querySelection.add("$key=?")
+          when (schemaType) {
+            "string" -> argsSelection.add(filter.getString(key))
+            "integer" -> argsSelection.add(filter.getInt(key).toString())
+          }
+        }
+      }
     }
 
-    do {
-      var isMatched: Boolean
-      val _address = cursor?.getString(cursor.getColumnIndex("address"))
-      val _fcontent = cursor?.getString(cursor.getColumnIndex("body"))
+    // Make final paginate & query properties
+    val paginate: String? = if (enablePaginate) "address LIMIT $limit OFFSET $skip" else null
+    val query: String = querySelection.joinToString(" and ")
+    val args: Array<String> = argsSelection.toTypedArray()
 
-      if (fid > -1)
-        isMatched = fid == cursor?.getInt(cursor.getColumnIndex("_id"))
-      else if (fread > -1)
-        isMatched = fread == cursor?.getInt(cursor.getColumnIndex("read"))
-      else if (faddress.length > 0)
-        isMatched = faddress.equals(_address)
-      else if (fcontent.length > 0)
-        isMatched = fcontent.equals(_fcontent)
-      else {
-        isMatched = true
+    try {
+      val resolver: ContentResolver? = currentActivity?.getContentResolver()
+      val cursor: Cursor? = resolver?.query(Uri.parse("content://sms/$box"),
+        null, query, args, paginate
+      )
+
+      val list: WritableArray = Arguments.createArray()
+
+      generateSequence {
+        // @TODO: fix this ugly non-null expression by kotlin skyle
+        if (cursor != null) {
+          if (cursor.moveToNext()) { cursor }
+          else { null }
+        } else {
+          null
+        }
+      }.forEach {
+        val sms = getSmsFromCursor(it)
+        list.pushMap(sms)
       }
 
-      if (isMatched && counter >= indexFrom) {
-        if (maxCount > 0 && counter >= indexFrom + maxCount) break
-
-        val sms = getSmsMapFromCursor(cursor)
-        smsList?.pushMap(sms)
-      }
-    } while (_iteratorSafe_())
-
-    cursor?.close()
-
-    // val result = Arguments.createMap()
-    // result.putInt("length", counter)
-    // result.putArray("list", smsList)
-
-    promise.resolve(smsList)
+      cursor?.close()
+      promise.resolve(list)
+    } catch (error: Exception) {
+      Log.d("RNSmsManager", "error in get list from cursor", error)
+      promise.reject(SMS_ERROR_LIST, error)
+    }
   }
 
-  private fun getSmsMapFromCursor(cursorSms: Cursor?): WritableMap {
+  private fun getSmsFromCursor(cursorSms: Cursor?): WritableMap {
     val sms = Arguments.createMap()
 
     val columnNumber = cursorSms?.getColumnCount()
@@ -197,10 +271,14 @@ class SmsModule
   companion object {
     private val TAG = SmsModule::class.java.getSimpleName()
 
+    // State codes
+    private val SMS_DELIVERED = "SMS_DELIVERED"
+    private val SMS_SENT = "SMS_SENT"
+
     // Error codes
-    private val GET_STATUS_DEFAULT_ERROR = "GET_STATUS_DEFAULT_ERROR"
-    private val SET_AS_DEFAULT_ERROR = "SET_AS_DEFAULT_ERROR"
-    private val SMS_SEND_ERROR = "SMS_SEND_ERROR"
-    private val SMS_LIST_ERROR = "SMS_LIST_ERROR"
+    private val SMS_ERROR_GET_STATUS_D = "SMS_ERROR_GET_STATUS_D"
+    private val SMS_ERROR_SET_DEFAULT = "SMS_ERROR_SET_DEFAULT"
+    private val SMS_ERROR_SEND = "SMS_ERROR_SEND"
+    private val SMS_ERROR_LIST = "SMS_ERROR_LIST"
   }
 }

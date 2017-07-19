@@ -1,9 +1,11 @@
 buildscript {
     repositories {
+        mavenCentral()
         jcenter()
     }
 
     ext.kotlin_version = '1.1.2-4'
+    ext.anko_version = '0.10.0'
 
     dependencies {
         classpath 'com.android.tools.build:gradle:2.2.3'
@@ -20,10 +22,10 @@ android {
     buildToolsVersion "23.0.3"
 
     defaultConfig {
-        minSdkVersion 16
-        targetSdkVersion 22
-        versionCode 1
+        targetSdkVersion 23
         versionName "1.0"
+        minSdkVersion 23
+        versionCode 1
     }
     lintOptions {
         abortOnError false
@@ -35,8 +37,16 @@ repositories {
 }
 
 dependencies {
-    // compile 'com.mcxiaoke.koi:core:0.5.4'
-    // compile 'com.mcxiaoke.koi:async:0.5.4'
     compile "com.facebook.react:react-native:+"
     compile "org.jetbrains.kotlin:kotlin-stdlib-jre7:$kotlin_version"
+    compile 'com.sromku:simple-storage:1.2.1'
+
+    compile "org.jetbrains.kotlinx:kotlinx-coroutines-android:0.16"
+    compile "org.jetbrains.anko:anko:$anko_version"
+}
+
+kotlin {
+    experimental {
+        coroutines "enable"
+    }
 }
